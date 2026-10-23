@@ -48,30 +48,23 @@ Requirements: JDK 21. The Gradle wrapper (Gradle 9) downloads everything else.
 ```
 
 Install the ZIP via *Settings | Plugins | ⚙ | Install Plugin from Disk…*. To distribute it inside the company with
-auto-updates, host the ZIP and an `updatePlugins.xml` on an internal web server and add that URL under
-*Settings | Plugins | ⚙ | Manage Plugin Repositories*.
+auto-updates, use an internal plugin repository (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#internal-plugin-repository)).
 
 The build targets IntelliJ Platform **2024.3 (since-build 243)** and has no upper bound.
 
-## Code layout
+## Documentation
 
-```
-src/main/kotlin/io/github/elvismanchkin/taskondemand/
-  core/        HTTP transport (IDE proxy/certificates), REST client, auth, version parsing, background helper
-  settings/    server settings + password safe, project mapping, settings pages
-  jira/        REST client, issue-key parsing, create-meta field mapping, current-issue service, create dialog,
-               issue navigation and commit message integration
-  confluence/  REST client, link parsing (pageId, /display/, tiny links), linked-pages collector
-  kibana/      REST client, Rison encoder, Discover URL builder
-  grafana/     REST client, dashboard URL builder
-  ui/          tool window tabs, status bar widget, navigation helpers
-  actions/     menu actions
-```
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): architecture, version-specific behaviour, how to extend, releasing and the
+  internal plugin repository
+- [docs/RESEARCH.md](docs/RESEARCH.md): research on the APIs and the roadmap
+- [CHANGELOG.md](CHANGELOG.md)
+- [CLAUDE.md](CLAUDE.md): conventions for AI-assisted work in this repository
 
-The REST clients are plain Kotlin behind an `HttpTransport` interface, so the unit tests run against a fake transport
-without starting an IDE.
+## Status and next steps
 
-## Not done yet (next steps)
+Version 0.1.0 has not yet been tested against real servers. Please report what breaks with your server versions.
+
+Not done yet:
 
 - In-IDE log viewer: query Elasticsearch directly or through Kibana's console proxy, with clickable stack traces.
 - Grafana dashboard "schema": list panels and variables from `/api/dashboards/uid/{uid}`.

@@ -1,6 +1,7 @@
 # Research: IntelliJ IDEA plugin for on-prem Kibana / Grafana / Jira / Confluence
 
-Status: research. Implementation of steps 1–4 of the roadmap: see the [README](../README.md). Scope: **on-premise, self-hosted, mostly legacy versions**.
+Status: research notes, kept as background. Roadmap steps 1–4 are implemented (see §11 and the [README](../README.md)).
+Scope: **on-premise, self-hosted, mostly legacy versions**.
 Atlassian Cloud, Elastic Cloud and Grafana Cloud are out of scope.
 
 ---
@@ -279,17 +280,18 @@ creating branches from tasks and saving context. Options:
 
 ---
 
-## 11. Suggested roadmap
+## 11. Roadmap
 
-1. **Skeleton.** Template project, settings pages (servers + project mapping), PasswordSafe, "Test connection"
-   with version detection, and a custom plugin repository for internal distribution.
-2. **Jira MVP.** Branch → issue detection, status-bar widget, tool window list (JQL), open in browser, create issue
-   (version-aware createmeta), Issue Navigation link registration.
-3. **Kibana + Grafana deep links.** Discover URL builder (version-aware) and Grafana dashboard URL with variables. Actions in the
-   tool window, the status-bar popup and the editor context menu ("Open logs for selection").
-4. **Confluence.** Pages from Jira remote links, repo URL scan and configured space. List in the tool window.
-5. **Later.** In-IDE log viewer (ES / console proxy) with clickable stack traces, Grafana panel listing,
-   transitions/comments, create branch from issue, commit-message prefix, JCEF embedding for SSO setups.
+| # | Step | Status |
+|---|---|---|
+| 1 | **Skeleton.** Template project, settings pages (servers + project mapping), PasswordSafe, "Test connection" with version detection. | ✅ Done in 0.1.0. A custom plugin repository is documented in [DEVELOPMENT.md](DEVELOPMENT.md) but not set up. |
+| 2 | **Jira MVP.** Branch → issue detection, status-bar widget, tool window list (JQL), open in browser, create issue (version-aware createmeta), Issue Navigation link registration. | ✅ Done in 0.1.0, plus transitions and the commit-message prefix from step 5. |
+| 3 | **Kibana + Grafana deep links.** Version-aware Discover URL builder, Grafana dashboard URL with variables, actions in the tool window, status-bar popup and editor/console context menu. | ✅ Done in 0.1.0 |
+| 4 | **Confluence.** Pages from Jira remote links, repo URL scan, configured space and pinned pages. List in the tool window. | ✅ Done in 0.1.0, plus pages that mention the issue key and search. |
+| 5 | **Later.** In-IDE log viewer (ES / console proxy) with clickable stack traces, Grafana panel listing, comments, create branch from issue, JCEF embedding for SSO setups. | ⏳ Open |
+
+Nothing has been tested against real servers yet. Verifying the version-specific branches (Kibana URL routes,
+Confluence tiny links, Jira create-meta) against the team's actual servers is the most valuable next step.
 
 ## 12. Open questions for the team
 
