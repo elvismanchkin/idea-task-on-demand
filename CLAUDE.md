@@ -85,3 +85,16 @@ src/test/kotlin/...                       JUnit 4. FakeTransport for clients, Pl
 - Not yet tested against real servers. The most fragile parts are Confluence tiny-link decoding (`ConfluenceLinks`),
   Kibana Discover URLs per version, and Jira create-meta for unusual custom field types.
 - Not implemented: in-IDE log viewer, Grafana panel listing, create branch from issue, comments, SSO/JCEF login.
+- Deliberate trade-offs from the code review (revisit if real servers disagree):
+  - Kibana with an unknown version uses KQL, not Lucene (KDoc on `KibanaUrls.queryLanguage`).
+  - Confluence 5.5–5.6 has no search fallback: CQL needs 5.7, older servers get a clear error. A fallback would use
+    `/rest/prototype/1/search`. The Confluence version is never detected (`Clients.cachedVersion` returns null).
+  - Jira datetime fields are entered as `yyyy-MM-dd [HH:mm]` and sent as UTC (`CreateIssueFields.toJiraDateTime`).
+  - Branch keys without configured project keys skip a small stoplist (`UTF`, `JDK`, `RFC`, …) in `IssueKeys`. With
+    no keys set, an unverified key still prefixes the commit message even if Jira returns 404.
+  - `IssueNavigationSync` recognises its own rules by shape (`…/browse/$0` + our key pattern), so a hand-made rule
+    with the same shape is replaced too.
+  - Create Issue is blocked until create-meta loads; if Jira can't return it, no issue can be created from the IDE.
+- Not covered by tests: the UI layer (panels, settings page, dialogs, async ordering), `PlatformHttpTransport` against
+  real redirects, and `Credentials`. Only `PluginSmokeTest` loads the plugin in a headless IDE.
+- `.claude/settings.json` pre-approves the Gradle tasks above for Claude Code; keep it to build/test commands.

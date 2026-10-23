@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew buildPlugin:*)",
+      "Bash(./gradlew verifyPlugin:*)",
+      "Bash(./gradlew runIde:*)",
+      "Bash(./gradlew compileKotlin:*)",
+      "Bash(./gradlew compileTestKotlin:*)",
+      "Bash(./gradlew check:*)",
+      "Bash(./gradlew clean:*)",
+      "Bash(./gradlew --offline:*)",
+      "Bash(./gradlew tasks:*)",
+      "Bash(./gradlew dependencies:*)",
+      "Bash(./gradlew --version)",
+      "Bash(./gradlew --stop)"
+    ]
+  }
+}
