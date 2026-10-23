@@ -54,7 +54,8 @@ The build targets IntelliJ Platform **2024.3 (since-build 243)** and has no uppe
 
 ## Documentation
 
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): architecture, version-specific behaviour, how to extend, releasing and the
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): architecture, version-specific behaviour, how to extend, gotchas and
+  rules with a review checklist, releasing and the
   internal plugin repository
 - [docs/RESEARCH.md](docs/RESEARCH.md): research on the APIs and the roadmap
 - [CHANGELOG.md](CHANGELOG.md)

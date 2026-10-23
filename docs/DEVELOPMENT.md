@@ -92,6 +92,99 @@ its own package, a branch in `Clients.test`, and UI where it's needed.
 - Kotlin `apiVersion` 2.0. The IDE provides the stdlib (`kotlin.stdlib.default.dependency = false`).
 - kotlinx-serialization is bundled, so only the JSON tree API is used and no compiler plugin.
 
+## Gotchas and rules
+
+Lessons from building and reviewing 0.1.0. Each one cost a build failure, a verifier finding or a review bug.
+
+### Build and toolchain
+
+- **IntelliJ Platform Gradle Plugin 2.19+ needs Gradle 9.** On Gradle 8 the build fails during configuration. Keep the
+  wrapper and the plugin version in step, and the Kotlin compiler new enough for Gradle 9 (2.2.x). The language and
+  API level stay at 2.0 because IDEA 2024.3 ships the Kotlin 2.0 stdlib.
+- **`settings.gradle.kts` needs `import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform`** for
+  `repositories { intellijPlatform { defaultRepositories() } }`. Without it the name is unresolved.
+- **`kotlin.stdlib.default.dependency=false`.** The IDE provides the stdlib. Bundling another copy causes class
+  conflicts at runtime that tests don't catch.
+- **kotlinx-serialization is bundled with `exclude(group = "org.jetbrains.kotlin")`**, and only the tree API is used. The
+  compiler plugin and `@Serializable` would generate code tied to a serialization version that can clash with the IDE's.
+- **Cloud sandboxes:** Maven Central may return HTTP 429. Use the local-only mirror init script described in
+  `CLAUDE.md`; never commit a mirror.
+
+### Plugin Verifier
+
+- Run `verifyPlugin` after any platform API change. Treat any deprecated, scheduled-for-removal, experimental or
+  internal usage as a failure, not a warning: with no `until-build`, today's deprecation is a future crash.
+- **Kotlin interface default methods** produce bridge methods that the verifier reports as internal API overrides.
+  `jvmDefault = NO_COMPATIBILITY` in `build.gradle.kts` prevents that. Don't remove it.
+- **`SimpleListCellRenderer.create(...)` is scheduled for removal.** Subclass `SimpleListCellRenderer<T>` and override
+  `customize` instead.
+- The verifier logs `ERROR … Unable to read documented IntelliJ API incompatible changes` when it can't download
+  JetBrains' list of documented changes (no network, or a 403). It is harmless; only the final
+  `Compatible` / problem list matters.
+- The first run downloads both IDEs (~1 GB). Later runs take a few minutes, mostly for the newest IDE.
+
+### HTTP and servers
+
+- **`HttpRequests` follows GET redirects itself** (it turns off `HttpURLConnection` redirects and loops on `Location`),
+  and it runs the `tuner` again for every hop, without checking the host. That is why `PlatformHttpTransport` decides
+  per hop whether to set `Authorization` (`isSameOrigin`). Anything that adds headers must go through the same check.
+  This was found by reading the platform bytecode (`javap -c` on `HttpRequests` in `lib/app-client.jar`); re-check it
+  when raising the minimum IDE version.
+- **The JSON tree parser accepts bare literals.** `parseJson("true")` or an HTML page starting with a word can "parse",
+  so `RestClient` only parses bodies starting with `{` or `[`. SSO proxies answer with HTTP 200 and an HTML login page.
+- **Atlassian CAPTCHA lock:** after failed Basic logins Jira/Confluence set `X-Seraph-LoginReason: AUTHENTICATION_DENIED`
+  and refuse even correct passwords until the user logs in through the browser. Never retry automatically.
+- **Read the response charset.** Old Jira/Confluence error pages can be ISO-8859-1; `charsetOf` reads `Content-Type`.
+- **Encode path segments** (`RestClient.encode`) for anything user-supplied: issue keys from custom branch patterns,
+  Grafana uids, project keys.
+- **CQL `~` goes through the Lucene query parser.** Quote exact values as a phrase (`ConfluenceClient.phrase`), or
+  `PROJ-123` matches any page containing "123", and `(`, `:` or `/` in pasted text cause a 400.
+- **Jira issue types are global.** "Task" has the same id in every project, so checking only the issue type does not
+  prove that loaded create-meta belongs to the selected project.
+- **A 404 isn't always "old version".** Jira 8.4+ also answers 404 with an `errorMessages` body for an unknown project.
+  Only fall back to the legacy API when the 404 is not Jira's own error (`JiraClient.withCreateMetaFallback`).
+- **8.4+ create-meta is paged** (`startAt`, `maxResults`, `isLast`/`total`). Read every page.
+
+### Threading and lifecycle
+
+- **Never touch the password safe on the EDT.** KeePass or a locked OS keychain can block or prompt. This includes
+  `AppSettings.connection()` and settings pages (`Credentials.saveAsync`, `getAfterPendingWrites`). Writes go through
+  one serial executor so a read right after Apply sees the new secret.
+- **Rethrow `ProcessCanceledException`.** `runCatching` swallows it. `runInBackground` rethrows it in titled tasks and
+  drops it in silent ones; do the same in any new background code, or a cancelled task shows up as an error.
+- **No `ModalityState.any()` for code that changes state.** `runInBackground` captures
+  `ModalityState.defaultModalityState()` on the calling thread. Callbacks then run inside the dialog that started them,
+  but not during an unrelated modal dialog. `CurrentIssueService` publishes with `ModalityState.nonModal()`.
+- **Async results can arrive late or out of order.** Number each request (`generation`) and drop answers that aren't the
+  newest one, or that arrive after `dispose()`. In dialogs, also check `isDisposed` and `component.isShowing` before
+  showing a popup, otherwise `showUnderneathOf` throws on a closed dialog.
+- **Git events arrive on several threads.** `CurrentIssueService.refresh` does its compare-and-set under `synchronized`.
+- **Every message-bus connection needs a parent disposable** (`connect(this)` plus `Disposer.register(content, panel)`
+  in the tool window factory).
+- **Unsolicited refreshes are silent.** Branch changes and settings changes use `runInBackground` with a null title and
+  show errors in the component. Progress and balloons are only for actions the user started.
+
+### Settings
+
+- **`isModified` must normalise exactly as `apply` does** (trailing `/` on URLs, the default JQL stored as empty).
+  Otherwise Apply stays enabled forever and each Apply looks like a change.
+- **Secrets are keyed by kind + URL + username.** When either changes, move the secret and delete the old entry, or the
+  keychain fills with orphans.
+- **After changing server settings, refresh open projects** (issue navigation rule, current issue). Project settings
+  changes publish `ProjectSettings.CHANGED` so open tabs can reload.
+- **Project settings are committed by teams.** No URLs, usernames or secrets in `ProjectSettings`.
+
+### Review checklist
+
+Before pushing a change, check it against the bugs found in review:
+
+1. Does anything blocking (REST, password safe, file walking) run on the EDT?
+2. Can an older or slower request overwrite a newer result, or update a disposed component?
+3. Does each new server call have a `FakeTransport` test for every version branch and the error path?
+4. Is user input encoded for its context: URL path, query, CQL, KQL/Lucene, Rison?
+5. Does an unknown server version pick the legacy-compatible behaviour (or is the exception documented in KDoc)?
+6. Is the change recorded in `CHANGELOG.md`, and did `verifyPlugin` stay clean?
+
 ## Releasing
 
 1. Bump `version` in `gradle.properties` and move the `[Unreleased]` entries in `CHANGELOG.md` to the new version.

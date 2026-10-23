@@ -4,7 +4,8 @@ IntelliJ IDEA plugin ("Task on Demand") that connects the IDE to **on-premise, o
 Kibana and Grafana. Cloud editions are explicitly out of scope, so don't add Cloud-only APIs (Jira REST v3, Confluence v2,
 accountId users, Grafana Cloud).
 
-- User docs: `README.md`. Developer notes: `docs/DEVELOPMENT.md`. Background and API research: `docs/RESEARCH.md`.
+- User docs: `README.md`. Developer notes: `docs/DEVELOPMENT.md` (read its "Gotchas and rules" and review
+  checklist before changing code). Background and API research: `docs/RESEARCH.md`.
 - Changes: record user-visible changes in `CHANGELOG.md` under `[Unreleased]`.
 
 ## Commands
