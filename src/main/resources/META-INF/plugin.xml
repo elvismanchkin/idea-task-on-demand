@@ -1,0 +1,70 @@
+<idea-plugin>
+    <id>io.github.elvismanchkin.taskondemand</id>
+    <name>Task on Demand</name>
+    <vendor>elvismanchkin</vendor>
+
+    <description><![CDATA[
+    Connects the IDE to on-premise (self-hosted, including legacy) Jira, Confluence, Kibana and Grafana:
+    <ul>
+      <li><b>Jira</b>: task list for the project (JQL), create issues with the project's required fields,
+          the current issue taken from the git branch name (status bar), transitions, clickable issue keys
+          and commit message prefix.</li>
+      <li><b>Confluence</b>: pages linked from the current issue, mentioning it, pinned for the project,
+          or linked from README/docs files, plus search.</li>
+      <li><b>Kibana</b>: opens Discover with the application's logs (version-aware links for Kibana 6.x – 8.x),
+          also for the text selected in the editor.</li>
+      <li><b>Grafana</b>: opens the application's dashboard with template variables (Grafana 4.x – 10.x).</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
+    <depends>Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable id="taskondemand.servers" parentId="tools" displayName="Task on Demand"
+                                 instance="io.github.elvismanchkin.taskondemand.settings.ServersConfigurable"/>
+        <projectConfigurable id="taskondemand.project" parentId="taskondemand.servers" displayName="Project Mapping"
+                             instance="io.github.elvismanchkin.taskondemand.settings.ProjectMappingConfigurable"/>
+
+        <toolWindow id="Task on Demand" anchor="bottom" icon="AllIcons.Toolwindows.ToolWindowTodo"
+                    factoryClass="io.github.elvismanchkin.taskondemand.ui.TaskOnDemandToolWindowFactory"/>
+        <statusBarWidgetFactory id="TaskOnDemand.CurrentIssue" order="after CodeStyleStatusBarWidget"
+                                implementation="io.github.elvismanchkin.taskondemand.ui.CurrentIssueWidgetFactory"/>
+        <postStartupActivity implementation="io.github.elvismanchkin.taskondemand.TaskOnDemandStartup"/>
+        <vcs.commitMessageProvider implementation="io.github.elvismanchkin.taskondemand.jira.IssueCommitMessageProvider"/>
+        <notificationGroup id="Task on Demand" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="TaskOnDemand.Group" text="Task on Demand" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="TaskOnDemand.OpenCurrentIssue" class="io.github.elvismanchkin.taskondemand.actions.OpenCurrentIssueAction"
+                    text="Open Current Issue in Browser" icon="AllIcons.General.Web"/>
+            <action id="TaskOnDemand.GoToIssue" class="io.github.elvismanchkin.taskondemand.actions.GoToIssueAction"
+                    text="Go to Jira Issue…"/>
+            <action id="TaskOnDemand.CreateIssue" class="io.github.elvismanchkin.taskondemand.actions.CreateIssueAction"
+                    text="Create Jira Issue…" icon="AllIcons.General.Add"/>
+            <action id="TaskOnDemand.TransitionIssue" class="io.github.elvismanchkin.taskondemand.actions.TransitionIssueAction"
+                    text="Change Issue Status…" icon="AllIcons.Actions.Forward"/>
+            <action id="TaskOnDemand.RefreshCurrentIssue" class="io.github.elvismanchkin.taskondemand.actions.RefreshCurrentIssueAction"
+                    text="Refresh Current Issue" icon="AllIcons.Actions.Refresh"/>
+            <separator/>
+            <action id="TaskOnDemand.OpenLogs" class="io.github.elvismanchkin.taskondemand.actions.OpenLogsAction"
+                    text="Open Logs in Kibana" icon="AllIcons.Debugger.Console"/>
+            <action id="TaskOnDemand.OpenDashboard" class="io.github.elvismanchkin.taskondemand.actions.OpenDashboardAction"
+                    text="Open Grafana Dashboard" icon="AllIcons.Actions.ProfileCPU"/>
+            <action id="TaskOnDemand.ConfluencePages" class="io.github.elvismanchkin.taskondemand.actions.ShowConfluencePagesAction"
+                    text="Show Linked Confluence Pages…"/>
+            <separator/>
+            <action id="TaskOnDemand.Settings" class="io.github.elvismanchkin.taskondemand.actions.OpenSettingsAction"
+                    text="Settings…" icon="AllIcons.General.Settings"/>
+        </group>
+
+        <action id="TaskOnDemand.SearchLogsForSelection" class="io.github.elvismanchkin.taskondemand.actions.SearchLogsForSelectionAction"
+                text="Search Logs in Kibana" description="Open Kibana Discover filtered by the selected text">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ConsoleEditorPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

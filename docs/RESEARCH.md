@@ -1,6 +1,6 @@
 # Research: IntelliJ IDEA plugin for on-prem Kibana / Grafana / Jira / Confluence
 
-Status: research / pre-design. Scope: **on-premise, self-hosted, mostly legacy versions**.
+Status: research. Implementation of steps 1–4 of the roadmap: see the [README](../README.md). Scope: **on-premise, self-hosted, mostly legacy versions**.
 Atlassian Cloud, Elastic Cloud and Grafana Cloud are out of scope.
 
 ---
