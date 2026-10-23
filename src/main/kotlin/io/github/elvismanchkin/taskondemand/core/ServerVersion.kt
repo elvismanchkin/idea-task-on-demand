@@ -22,7 +22,8 @@ data class ServerVersion(val parts: List<Int>) : Comparable<ServerVersion> {
 
         fun parse(text: String?): ServerVersion? {
             val match = LEADING_NUMBERS.find(text?.trim().orEmpty()) ?: return null
-            return ServerVersion(match.groupValues[1].split('.').map { it.toInt() })
+            val parts = match.groupValues[1].split('.').map { it.toIntOrNull() ?: return null }
+            return ServerVersion(parts)
         }
     }
 }

@@ -35,6 +35,9 @@ class ConfluencePanel(private val project: Project) : JPanel(BorderLayout()), Di
     private val list = JBList(model)
     private val search = SearchTextField(false)
     private var lastIssueKey: String? = null
+    /** Bumped per request; only the newest answer is shown, and nothing after the tab is closed. */
+    private var generation = 0
+    private var disposed = false
 
     init {
         list.cellRenderer = object : ColoredListCellRenderer<LinkedPage>() {
@@ -71,20 +74,28 @@ class ConfluencePanel(private val project: Project) : JPanel(BorderLayout()), Di
         }, BorderLayout.NORTH)
         add(ScrollPaneFactory.createScrollPane(list), BorderLayout.CENTER)
 
-        project.messageBus.connect(this).subscribe(CurrentIssueService.TOPIC, CurrentIssueService.Listener {
+        val connection = project.messageBus.connect(this)
+        connection.subscribe(CurrentIssueService.TOPIC, CurrentIssueService.Listener {
             if (it.issueKey != lastIssueKey) reload()
         })
+        connection.subscribe(ProjectSettings.CHANGED, ProjectSettings.Listener { reload() })
         reload()
     }
 
     fun reload() {
+        val request = ++generation
         if (!AppSettings.getInstance().isConfigured(ServerKind.CONFLUENCE)) {
             list.emptyText.text = "Confluence server is not configured (Settings | Tools | Task on Demand)"
             return
         }
         lastIssueKey = CurrentIssueService.getInstance(project).snapshot.issueKey
         list.emptyText.text = "Loading…"
-        Navigator.collectPages(project, lastIssueKey) { show(it, "No linked pages. Link pages in the Jira issue, the README, or project settings.") }
+        Navigator.collectPages(
+            project, lastIssueKey,
+            onError = { if (isCurrent(request)) show(emptyList(), "Confluence: ${it.userMessage()}") },
+        ) {
+            if (isCurrent(request)) show(it, "No linked pages. Link pages in the Jira issue, the README, or project settings.")
+        }
     }
 
     private fun runSearch(text: String) {
@@ -92,11 +103,16 @@ class ConfluencePanel(private val project: Project) : JPanel(BorderLayout()), Di
         if (!AppSettings.getInstance().isConfigured(ServerKind.CONFLUENCE)) return
         val space = ProjectSettings.getInstance(project).state.confluenceSpaceKey
         list.emptyText.text = "Searching…"
+        val request = ++generation
         runInBackground(
             project, null,
             work = { Clients.confluence().search(ConfluenceClient.textSearchCql(text, space)) },
-            onError = { show(emptyList(), it.userMessage()) },
-            onSuccess = { pages -> show(pages.map { LinkedPage(it.title, it.url, PageSource.SEARCH, null, it.spaceKey, it.id) }, "Nothing found") },
+            onError = { if (isCurrent(request)) show(emptyList(), it.userMessage()) },
+            onSuccess = { pages ->
+                if (isCurrent(request)) {
+                    show(pages.map { LinkedPage(it.title, it.url, PageSource.SEARCH, null, it.spaceKey, it.id) }, "Nothing found")
+                }
+            },
         )
     }
 
@@ -106,5 +122,9 @@ class ConfluencePanel(private val project: Project) : JPanel(BorderLayout()), Di
         list.emptyText.text = emptyText
     }
 
-    override fun dispose() = Unit
+    private fun isCurrent(request: Int) = !disposed && request == generation
+
+    override fun dispose() {
+        disposed = true
+    }
 }

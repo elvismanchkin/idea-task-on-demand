@@ -5,6 +5,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.project.Project
+import com.intellij.util.messages.Topic
 import com.intellij.util.xmlb.XmlSerializerUtil
 import com.intellij.util.xmlb.annotations.XCollection
 
@@ -81,7 +82,15 @@ class ProjectSettings : PersistentStateComponent<ProjectSettings.State> {
     val activeApplication: AppMapping?
         get() = state.applications.firstOrNull { it.name == state.selectedApplication } ?: state.applications.firstOrNull()
 
+    /** Published (on the EDT) after the project mapping is changed in Settings, so open tabs can refresh. */
+    fun interface Listener {
+        fun projectSettingsChanged()
+    }
+
     companion object {
+        @Topic.ProjectLevel
+        val CHANGED: Topic<Listener> = Topic(Listener::class.java, Topic.BroadcastDirection.NONE)
+
         fun getInstance(project: Project): ProjectSettings = project.getService(ProjectSettings::class.java)
 
         fun splitList(value: String): List<String> = value.split(',', ';', ' ', '\n').map { it.trim() }.filter { it.isNotEmpty() }

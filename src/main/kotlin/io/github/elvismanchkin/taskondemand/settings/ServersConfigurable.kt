@@ -1,6 +1,8 @@
 package io.github.elvismanchkin.taskondemand.settings
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.CollectionComboBoxModel
 import com.intellij.ui.SimpleListCellRenderer
@@ -16,6 +18,8 @@ import io.github.elvismanchkin.taskondemand.core.ServerConnection
 import io.github.elvismanchkin.taskondemand.core.ServerKind
 import io.github.elvismanchkin.taskondemand.core.runInBackground
 import io.github.elvismanchkin.taskondemand.core.userMessage
+import io.github.elvismanchkin.taskondemand.jira.CurrentIssueService
+import io.github.elvismanchkin.taskondemand.jira.IssueNavigationSync
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JList
@@ -47,7 +51,18 @@ class ServersConfigurable : Configurable {
 
     override fun isModified(): Boolean = forms.values.any { it.isModified() }
 
-    override fun apply() = forms.values.forEach { it.apply() }
+    override fun apply() {
+        forms.values.forEach { it.apply() }
+        // Once the secrets are saved, point issue links at the (possibly new) Jira URL and re-fetch the current issue.
+        Credentials.afterPendingWrites {
+            ApplicationManager.getApplication().invokeLater {
+                ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.forEach { project ->
+                    IssueNavigationSync.sync(project)
+                    CurrentIssueService.getInstance(project).refresh(force = true)
+                }
+            }
+        }
+    }
 
     override fun reset() = forms.values.forEach { it.reset() }
 
@@ -71,6 +86,9 @@ class ServersConfigurable : Configurable {
 
         /** Secret as loaded, to detect edits without hitting the password safe again. */
         private var loadedSecret: String = ""
+        /** The password safe is read in the background; until then the secret field is disabled and never saved. */
+        private var secretLoaded = false
+        private var resetGeneration = 0
 
         init {
             auth.addActionListener { secretLabel.text = selectedAuth().secretLabel.orEmpty() }
@@ -87,21 +105,31 @@ class ServersConfigurable : Configurable {
 
         private fun currentSecret() = String(secret.password)
 
+        /** Stored form of the URL field; compared and saved the same way. */
+        private fun enteredUrl() = url.text.trim().trimEnd('/')
+
         fun isModified(): Boolean {
             val state = settings.server(kind)
-            return url.text.trim() != state.url || selectedAuth() != settings.authType(kind) ||
-                username.text.trim() != state.username || currentSecret() != loadedSecret
+            return enteredUrl() != state.url || selectedAuth() != settings.authType(kind) ||
+                username.text.trim() != state.username || (secretLoaded && currentSecret() != loadedSecret)
         }
 
         fun apply() {
             val state = settings.server(kind)
-            val urlChanged = url.text.trim() != state.url
-            state.url = url.text.trim().trimEnd('/')
+            val oldUrl = state.url
+            val oldUser = state.username
+            state.url = enteredUrl()
             state.authType = selectedAuth().name
             state.username = username.text.trim()
-            if (urlChanged) state.detectedVersion = ""
-            Credentials.set(kind, state.url, state.username, if (selectedAuth() == AuthType.NONE) null else currentSecret())
-            loadedSecret = currentSecret()
+            if (state.url != oldUrl) state.detectedVersion = ""
+            val secretToSave = when {
+                selectedAuth() == AuthType.NONE -> ""
+                secretLoaded -> currentSecret()
+                else -> null
+            }
+            Credentials.saveAsync(kind, oldUrl, oldUser, state.url, state.username, secretToSave)
+            if (secretLoaded) loadedSecret = currentSecret()
+            url.text = state.url
         }
 
         fun reset() {
@@ -110,9 +138,32 @@ class ServersConfigurable : Configurable {
             auth.selectedItem = settings.authType(kind)
             secretLabel.text = settings.authType(kind).secretLabel.orEmpty()
             username.text = state.username
-            loadedSecret = if (state.url.isBlank()) "" else Credentials.get(kind, state.url, state.username).orEmpty()
-            secret.text = loadedSecret
             testResult.text = state.detectedVersion.takeIf { it.isNotBlank() }?.let { "Last detected version: $it" }.orEmpty()
+            loadSecret(state.url, state.username)
+        }
+
+        private fun loadSecret(savedUrl: String, savedUser: String) {
+            val request = ++resetGeneration
+            secretLoaded = false
+            secret.text = ""
+            secret.isEnabled = false
+            testButton.isEnabled = false
+            fun loaded(value: String) {
+                if (request != resetGeneration) return
+                loadedSecret = value
+                secret.text = value
+                secretLoaded = true
+                secret.isEnabled = true
+                testButton.isEnabled = true
+            }
+            if (savedUrl.isBlank()) return loaded("")
+            runInBackground(
+                null, null,
+                work = { Credentials.getAfterPendingWrites(kind, savedUrl, savedUser).orEmpty() },
+                // Leave the field disabled: saving now would overwrite a secret we could not read.
+                onError = { if (request == resetGeneration) testButton.isEnabled = true },
+                onSuccess = { loaded(it) },
+            )
         }
 
         private fun test() {

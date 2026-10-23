@@ -23,4 +23,8 @@ class ServerVersionTest {
         assertFalse(v.isAtLeast(8, 4, 1))
         assertTrue(ServerVersion.parse("10.0")!! > ServerVersion.parse("9.12.3")!!)
     }
+
+    @Test fun `overlong numbers are not a version`() {
+        assertNull(ServerVersion.parse("20240101123456"))
+    }
 }

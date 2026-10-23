@@ -56,10 +56,15 @@ src/test/kotlin/...                       JUnit 4. FakeTransport for clients, Pl
 - **Keep REST clients and URL builders free of platform classes.** They take a `ServerConnection` + `HttpTransport` and
   return plain data classes, so they're unit-testable with `FakeTransport`. Each new endpoint or version branch gets a
   test.
+- **Async UI:** ignore stale answers. Number requests (`generation`) and drop results that aren't the newest or that
+  arrive after dispose. Use `runInBackground` with a null title and an `onError` that shows the error in the
+  component for refreshes the user didn't trigger (branch changes); balloons only for explicit actions.
 - **Threading:** clients block. Never call them on the EDT. Use `runInBackground(project, title|null, work, onError,
   onSuccess)`: callbacks run on the EDT, and a null title means silent. `AppSettings.connection()` reads the password safe,
   so it's off-EDT too. `CurrentIssueService` publishes `TOPIC` on the EDT.
-- **Secrets** only via `Credentials` (PasswordSafe). Never put them in settings XML or logs. Project settings must stay
+- **Secrets** only via `Credentials` (PasswordSafe), and never on the EDT: the settings page loads them with
+  `runInBackground` and saves with `Credentials.saveAsync`. Never put them in settings XML or logs. Never send the
+  `Authorization` header to another origin (see `isSameOrigin` in `PlatformHttpTransport`). Project settings must stay
   free of URLs/credentials because teams commit them.
 - **HTTP** goes through `PlatformHttpTransport` (IDE proxy + Server Certificates). Don't add OkHttp/Ktor.
 - **JSON** uses the kotlinx-serialization tree API only (`parseJson`, `str("a.b")`, `arr()`). No `@Serializable`/compiler

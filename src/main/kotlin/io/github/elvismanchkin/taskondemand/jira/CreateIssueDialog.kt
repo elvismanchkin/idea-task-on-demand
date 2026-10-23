@@ -51,6 +51,8 @@ class CreateIssueDialog(private val project: Project, private val onCreated: ((S
     private var fields: List<JiraField> = emptyList()
     private val editors = mutableMapOf<JiraField, () -> Any?>()
     private var loadedProject: String? = null
+    /** Project key and issue type id the current [fields] belong to; creating is only allowed when they match. */
+    private var fieldsFor: Pair<String, String>? = null
 
     init {
         title = "Create Jira Issue"
@@ -80,13 +82,19 @@ class CreateIssueDialog(private val project: Project, private val onCreated: ((S
         val key = projectKey()
         if (key.isEmpty() || key == loadedProject) return
         loadedProject = key
+        clearFields()
+        typeModel.removeAll()
         statusLabel.text = "Loading issue types for $key…"
         runInBackground(
             project, null,
             work = { Clients.jira().issueTypes(key).filterNot { it.subtask } },
-            onError = { statusLabel.text = it.userMessage(); typeModel.removeAll() },
-            onSuccess = { types ->
+            onError = {
                 if (key != projectKey()) return@runInBackground
+                statusLabel.text = it.userMessage()
+                loadedProject = null // allow a retry for the same key
+            },
+            onSuccess = { types ->
+                if (isDisposed || key != projectKey()) return@runInBackground
                 typeModel.replaceAll(types)
                 val preferred = settings.state.defaultIssueType.ifBlank { "Task" }
                 typeCombo.selectedItem = types.firstOrNull { it.name.equals(preferred, true) } ?: types.firstOrNull()
@@ -99,17 +107,28 @@ class CreateIssueDialog(private val project: Project, private val onCreated: ((S
     private fun loadFields() {
         val key = projectKey()
         val type = typeCombo.selectedItem as? JiraIssueType ?: return
+        if (fieldsFor == key to type.id) return
+        clearFields()
         statusLabel.text = "Loading fields…"
+        // Issue types are global in Jira ("Task" is the same id everywhere), so check the project too.
+        fun isCurrent() = !isDisposed && key == projectKey() && typeCombo.selectedItem == type
         runInBackground(
             project, null,
             work = { Clients.jira().fields(key, type.id) },
-            onError = { statusLabel.text = it.userMessage() },
+            onError = { if (isCurrent()) statusLabel.text = it.userMessage() },
             onSuccess = { loaded ->
-                if (typeCombo.selectedItem != type) return@runInBackground
+                if (!isCurrent()) return@runInBackground
                 fields = loaded
+                fieldsFor = key to type.id
                 rebuildExtraFields()
             },
         )
+    }
+
+    private fun clearFields() {
+        fieldsFor = null
+        fields = emptyList()
+        rebuildExtraFields()
     }
 
     private fun rebuildExtraFields() {
@@ -146,9 +165,12 @@ class CreateIssueDialog(private val project: Project, private val onCreated: ((S
                 selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
                 visibleRowCount = 4
             }
-            ScrollPaneFactory.createScrollPane(list) to { list.selectedValuesList.map { it.id } }
+            ScrollPaneFactory.createScrollPane(list) to {
+                list.selectedValuesList.map { if (field.schemaItems == "string") it.name else it.id }
+            }
         }
         Editor.DATE -> JBTextField().apply { emptyText.text = "yyyy-MM-dd" }.let { it to { it.text } }
+        Editor.DATETIME -> JBTextField().apply { emptyText.text = "yyyy-MM-dd HH:mm (UTC)" }.let { it to { it.text } }
         Editor.USER -> JBTextField().apply { emptyText.text = "username" }.let { it to { it.text } }
         Editor.LABELS -> JBTextField().apply { emptyText.text = "comma-separated" }.let { it to { it.text } }
         else -> JBTextField().let { it to { it.text } }
@@ -158,6 +180,10 @@ class CreateIssueDialog(private val project: Project, private val onCreated: ((S
         projectKey().isEmpty() -> ValidationInfo("Enter a project key", projectCombo)
         typeCombo.selectedItem == null -> ValidationInfo("Select an issue type", typeCombo)
         summary.text.isBlank() -> ValidationInfo("Summary is required", summary)
+        fieldsFor != projectKey() to (typeCombo.selectedItem as JiraIssueType).id -> {
+            loadIssueTypes() // the key may have been typed without confirming it
+            ValidationInfo("Fields for ${projectKey()} are not loaded yet. Wait, or check the message below.")
+        }
         else -> editors.entries.firstOrNull { (field, value) ->
             field.required && !field.hasDefaultValue && CreateIssueFields.toJson(field, value()) == null
         }?.let { ValidationInfo("${it.key.name} is required") }

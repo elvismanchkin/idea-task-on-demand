@@ -6,7 +6,7 @@ See [docs/RESEARCH.md](docs/RESEARCH.md) for the background and the API choices 
 | | What it does | Versions handled |
 |---|---|---|
 | **Jira** | Task list (JQL) in the tool window. The current issue comes from the git branch (`feature/PROJ-123-…`) and shows in the status bar. You can create issues (including the project's required custom fields), change status, open an issue by key, get clickable issue keys in the VCS log and console, and have commit messages prefilled with the key. | Server/DC 7.x – 9.x (create-meta API picked by version) |
-| **Confluence** | Lists pages linked from the current issue (remote links), pages mentioning the issue key, pages pinned in project settings, and Confluence URLs found in `README*` / `docs/**`. Also has search. | Server/DC 5.5+ (`/rest/api/content`) |
+| **Confluence** | Lists pages linked from the current issue (remote links), pages mentioning the issue key, pages pinned in project settings, and Confluence URLs found in `README*` / `docs/**`. Also has search. | Server/DC 5.5+ (`/rest/api/content`); search and "mentions issue" need 5.7+ (CQL) |
 | **Kibana** | Opens Discover with the application's logs (index pattern + query + time range). *Search Logs in Kibana* on selected text in the editor or console. | 6.x – 8.x (legacy `/app/kibana#/discover` vs `/app/discover#/`, Lucene before 6.3) |
 | **Grafana** | Opens the application's dashboard with template variables and time range. Includes a dashboard picker in settings. | 4.x – 10.x (`/dashboard/db/slug` before 5.0) |
 

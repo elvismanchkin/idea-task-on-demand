@@ -30,7 +30,12 @@ object KibanaUrls {
     fun discoverRoute(version: ServerVersion?): String =
         if (version != null && version.isAtLeast(7, 10)) "/app/discover#/" else "/app/kibana#/discover"
 
-    /** KQL arrived in Kibana 6.3; earlier versions only understand Lucene syntax. */
+    /**
+     * KQL arrived in Kibana 6.3; earlier versions only understand Lucene syntax.
+     * An unknown version deliberately means KQL, the exception to "assume legacy": the mapped queries are written for
+     * the team's Kibana, which is almost always 6.3+, and a KQL query such as `app:"x" and env:"dev"` run as Lucene
+     * silently returns the wrong logs, while the reverse fails visibly.
+     */
     fun queryLanguage(version: ServerVersion?): String =
         if (version != null && !version.isAtLeast(6, 3)) "lucene" else "kuery"
 

@@ -24,4 +24,15 @@ class GrafanaUrlsTest {
     @Test fun `multi value variables keep order`() {
         assertEquals(listOf("host" to "a", "host" to "b"), GrafanaUrls.parseVariables("host=a&host=b"))
     }
+
+    @Test fun `values pasted from a url are not encoded twice`() {
+        assertEquals(listOf("host" to "web 01"), GrafanaUrls.parseVariables("var-host=web%2001"))
+    }
+
+    @Test fun `uid and slug are encoded as path segments`() {
+        assertEquals(
+            "https://g/d/a%20b/x%3Fy?from=now-6h&to=now",
+            GrafanaUrls.dashboard("https://g", ServerVersion.parse("9.0.0"), "a b", "x?y"),
+        )
+    }
 }

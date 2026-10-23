@@ -9,6 +9,7 @@ import io.github.elvismanchkin.taskondemand.core.arr
 import io.github.elvismanchkin.taskondemand.core.arrOrField
 import io.github.elvismanchkin.taskondemand.core.at
 import io.github.elvismanchkin.taskondemand.core.bool
+import io.github.elvismanchkin.taskondemand.core.parseJson
 import io.github.elvismanchkin.taskondemand.core.str
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -51,7 +52,7 @@ class JiraClient(connection: ServerConnection, transport: HttpTransport, var ver
     }
 
     fun issue(key: String): JiraIssue =
-        parseIssue(rest.get("rest/api/2/issue/$key", mapOf("fields" to ISSUE_FIELDS.joinToString(","))))
+        parseIssue(rest.get("rest/api/2/issue/${enc(key)}", mapOf("fields" to ISSUE_FIELDS.joinToString(","))))
 
     /**
      * Issue types that can be created in [projectKey].
@@ -61,8 +62,7 @@ class JiraClient(connection: ServerConnection, transport: HttpTransport, var ver
      */
     fun issueTypes(projectKey: String): List<JiraIssueType> = withCreateMetaFallback(
         modern = {
-            rest.get("rest/api/2/issue/createmeta/$projectKey/issuetypes", mapOf("maxResults" to 200))
-                .arrOrField("values").map(::parseIssueType)
+            paged("rest/api/2/issue/createmeta/${enc(projectKey)}/issuetypes", 200).map(::parseIssueType)
         },
         legacy = {
             legacyCreateMeta(projectKey, null).arr("issuetypes").map(::parseIssueType)
@@ -71,8 +71,8 @@ class JiraClient(connection: ServerConnection, transport: HttpTransport, var ver
 
     fun fields(projectKey: String, issueTypeId: String): List<JiraField> = withCreateMetaFallback(
         modern = {
-            rest.get("rest/api/2/issue/createmeta/$projectKey/issuetypes/$issueTypeId", mapOf("maxResults" to 500))
-                .arrOrField("values").map { parseField(it.str("fieldId") ?: "", it) }
+            paged("rest/api/2/issue/createmeta/${enc(projectKey)}/issuetypes/${enc(issueTypeId)}", 500)
+                .map { parseField(it.str("fieldId") ?: "", it) }
         },
         legacy = {
             val type = legacyCreateMeta(projectKey, issueTypeId).arr("issuetypes").firstOrNull()
@@ -87,7 +87,7 @@ class JiraClient(connection: ServerConnection, transport: HttpTransport, var ver
     }
 
     fun remoteLinks(key: String): List<JiraRemoteLink> =
-        (rest.get("rest/api/2/issue/$key/remotelink") as? JsonArray).orEmpty().mapNotNull { link ->
+        (rest.get("rest/api/2/issue/${enc(key)}/remotelink") as? JsonArray).orEmpty().mapNotNull { link ->
             val url = link.str("object.url") ?: return@mapNotNull null
             JiraRemoteLink(
                 title = link.str("object.title") ?: url,
@@ -98,12 +98,12 @@ class JiraClient(connection: ServerConnection, transport: HttpTransport, var ver
         }
 
     fun transitions(key: String): List<JiraTransition> =
-        rest.get("rest/api/2/issue/$key/transitions").arr("transitions").map {
+        rest.get("rest/api/2/issue/${enc(key)}/transitions").arr("transitions").map {
             JiraTransition(it.str("id") ?: "", it.str("name") ?: "?", it.str("to.name"))
         }
 
     fun transition(key: String, transitionId: String) {
-        rest.post("rest/api/2/issue/$key/transitions", buildJsonObject { putJsonObject("transition") { put("id", transitionId) } })
+        rest.post("rest/api/2/issue/${enc(key)}/transitions", buildJsonObject { putJsonObject("transition") { put("id", transitionId) } })
     }
 
     private fun legacyCreateMeta(projectKey: String, issueTypeId: String?): JsonElement? =
@@ -116,6 +116,29 @@ class JiraClient(connection: ServerConnection, transport: HttpTransport, var ver
             ),
         ).arr("projects").firstOrNull() ?: throw RemoteException("Project $projectKey not found or you cannot create issues in it")
 
+    /**
+     * The 8.4+ create-meta endpoints are paged (`startAt`, `maxResults`, `isLast`/`total`); read every page.
+     * A bare array (no paging fields) is a single page.
+     */
+    private fun paged(path: String, pageSize: Int): List<JsonElement> {
+        val all = mutableListOf<JsonElement>()
+        var startAt = 0
+        while (true) {
+            val page = rest.get(path, mapOf("startAt" to startAt, "maxResults" to pageSize))
+            val values = page.arrOrField("values")
+            all += values
+            val total = page.str("total")?.toIntOrNull()
+            val isLast = page.bool("isLast") ?: (total == null || startAt + values.size >= total)
+            if (isLast || values.isEmpty()) return all
+            startAt += values.size
+        }
+    }
+
+    /**
+     * With an unknown version, a 404 from the modern endpoint means "Jira before 8.4" only when it isn't one of Jira's
+     * own `errorMessages` answers. Those come from 8.4+ for an unknown project or issue type, and the legacy form
+     * would only hide the real error (9.0 removed it).
+     */
     private fun <T> withCreateMetaFallback(modern: () -> T, legacy: () -> T): T {
         val v = version
         return when {
@@ -124,11 +147,16 @@ class JiraClient(connection: ServerConnection, transport: HttpTransport, var ver
             else -> try {
                 modern()
             } catch (e: RemoteException) {
-                if (e.status != 404) throw e
+                if (e.status != 404 || isJiraError(e.responseBody)) throw e
                 legacy()
             }
         }
     }
+
+    private fun isJiraError(body: String): Boolean =
+        runCatching { parseJson(body).at("errorMessages") != null }.getOrDefault(false)
+
+    private fun enc(segment: String) = RestClient.encode(segment)
 
     companion object {
         val ISSUE_FIELDS = listOf("summary", "status", "issuetype", "assignee", "priority", "updated")

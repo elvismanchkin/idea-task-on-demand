@@ -5,6 +5,12 @@ import io.github.elvismanchkin.taskondemand.confluence.LinkedPagesCollector
 import io.github.elvismanchkin.taskondemand.confluence.PageRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import io.github.elvismanchkin.taskondemand.confluence.ConfluenceClient
+import io.github.elvismanchkin.taskondemand.core.AuthType
+import io.github.elvismanchkin.taskondemand.core.RemoteException
+import io.github.elvismanchkin.taskondemand.core.ServerConnection
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.nio.file.Files
 
@@ -64,5 +70,41 @@ class ConfluenceLinksTest {
             ),
             found,
         )
+    }
+
+    @Test fun `tiny link only right after the host or context path`() {
+        assertEquals(PageRef.ById("1"), ConfluenceLinks.parse("https://wiki/confluence/x/AQ"))
+        assertNull(ConfluenceLinks.parse("https://wiki/download/attachments/1/x/AQ"))
+    }
+
+    @Test fun `parentheses inside a url are kept`() {
+        assertEquals(
+            listOf("https://wiki/display/DEV/Foo+(bar)"),
+            ConfluenceLinks.findUrls("[Foo](https://wiki/display/DEV/Foo+(bar)) and (https://wiki/x/AQ", "https://wiki").take(1),
+        )
+        assertEquals(listOf("https://wiki/x/AQ"), ConfluenceLinks.findUrls("(see https://wiki/x/AQ)", "https://wiki"))
+    }
+
+    @Test fun `cql quotes the issue key as a phrase and escapes search text`() {
+        assertEquals("type = page AND text ~ \"\\\"PROJ-1\\\"\" ORDER BY lastmodified DESC", ConfluenceClient.mentionsCql("PROJ-1"))
+        assertEquals(
+            "type = page AND (title ~ \"release notes\" OR text ~ \"release notes\") AND space = \"DEV\" ORDER BY lastmodified DESC",
+            ConfluenceClient.textSearchCql("release notes", "DEV"),
+        )
+        assertEquals("\"\\\"at Foo.bar(Foo.java:12)\\\"\"", ConfluenceClient.phrase("at Foo.bar(Foo.java:12)"))
+        assertTrue(ConfluenceClient.textSearchCql("at Foo.bar(Foo.java:12)", null).contains(ConfluenceClient.phrase("at Foo.bar(Foo.java:12)")))
+    }
+
+    @Test fun `unresolvable pinned pages still show and search needs 5_7`() {
+        val fake = FakeTransport() // every request answers 404
+        val client = ConfluenceClient(ServerConnection("https://wiki", AuthType.NONE), fake)
+        val pages = LinkedPagesCollector(client, "https://wiki").collect(listOf("42"), "PROJ-1", emptyList(), null)
+        assertEquals(listOf("https://wiki/pages/viewpage.action?pageId=42"), pages.map { it.url })
+        try {
+            client.search("type = page")
+            fail("expected an exception")
+        } catch (e: RemoteException) {
+            assertTrue(e.message!!.contains("5.7"))
+        }
     }
 }

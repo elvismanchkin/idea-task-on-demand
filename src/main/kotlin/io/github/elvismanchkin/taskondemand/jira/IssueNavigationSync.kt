@@ -13,19 +13,32 @@ import io.github.elvismanchkin.taskondemand.settings.ProjectSettings
  */
 object IssueNavigationSync {
 
+    /**
+     * Adds, updates or removes our rule. Rules we wrote earlier are recognised by shape (a `…/browse/$0` link with a
+     * pattern from [IssueKeys.navigationPattern]), so a changed Jira URL or key list replaces them instead of adding
+     * a second link per key, and turning the option off removes them.
+     */
     fun sync(project: Project) {
         val settings = ProjectSettings.getInstance(project)
         val jiraUrl = AppSettings.getInstance().server(ServerKind.JIRA).url.trim().trimEnd('/')
-        if (!settings.state.registerIssueNavigation || jiraUrl.isEmpty()) return
-
         val configuration = IssueNavigationConfiguration.getInstance(project)
-        val link = "$jiraUrl/browse/$0"
-        val pattern = IssueKeys.navigationPattern(settings.projectKeys)
         val links = configuration.links
-        if (links.any { it.issueRegexp == pattern && it.linkRegexp == link }) return
+        val others = links.filterNot { isOurRule(it.issueRegexp, it.linkRegexp) }
 
-        // Replace our earlier rule (same Jira URL) instead of piling up variants when the project keys change.
-        val updated = links.filterNot { it.linkRegexp == link } + IssueNavigationLink(pattern, link)
-        configuration.links = updated
+        val wanted = if (settings.state.registerIssueNavigation && jiraUrl.isNotEmpty()) {
+            IssueNavigationLink(IssueKeys.navigationPattern(settings.projectKeys), "$jiraUrl/browse/$0")
+        } else {
+            null
+        }
+        val updated = others + listOfNotNull(wanted)
+        val unchanged = updated.size == links.size &&
+            updated.all { u -> links.any { it.issueRegexp == u.issueRegexp && it.linkRegexp == u.linkRegexp } }
+        if (!unchanged) configuration.links = updated
     }
+
+    private val OUR_PATTERN = Regex("""\\b\(\?:[A-Z0-9_|]+\)-\\d\+\\b""")
+
+    fun isOurRule(issueRegexp: String, linkRegexp: String): Boolean =
+        linkRegexp.endsWith("/browse/$0") &&
+            (issueRegexp == IssueKeys.navigationPattern(emptyList()) || OUR_PATTERN.matches(issueRegexp))
 }

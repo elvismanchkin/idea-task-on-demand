@@ -70,13 +70,21 @@ object Navigator {
         }).show(where)
     }
 
-    /** Loads the pages linked to the project and to [issueKey]. */
-    fun collectPages(project: Project, issueKey: String?, onDone: (List<LinkedPage>) -> Unit) {
+    /**
+     * Loads the pages linked to the project and to [issueKey]. With [onError] it runs silently (no progress, no
+     * balloon), for refreshes nobody asked for such as branch changes.
+     */
+    fun collectPages(
+        project: Project,
+        issueKey: String?,
+        onError: ((Throwable) -> Unit)? = null,
+        onDone: (List<LinkedPage>) -> Unit,
+    ) {
         val app = AppSettings.getInstance()
         if (!app.isConfigured(ServerKind.CONFLUENCE)) return Notifier.notConfigured(project, "Confluence")
         val settings = ProjectSettings.getInstance(project)
         runInBackground(
-            project, "Collecting Confluence pages",
+            project, if (onError == null) "Collecting Confluence pages" else null,
             work = {
                 val links = if (issueKey != null && app.isConfigured(ServerKind.JIRA)) {
                     runCatching { Clients.jira().remoteLinks(issueKey) }.getOrDefault(emptyList())
@@ -87,7 +95,7 @@ object Navigator {
                 LinkedPagesCollector(Clients.confluence(), app.server(ServerKind.CONFLUENCE).url.trim().trimEnd('/'))
                     .collect(settings.pinnedConfluencePageIds, issueKey, links, root)
             },
-            onError = { Notifier.error(project, "Confluence: ${it.userMessage()}") },
+            onError = onError ?: { Notifier.error(project, "Confluence: ${it.userMessage()}") },
             onSuccess = onDone,
         )
     }

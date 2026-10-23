@@ -92,6 +92,7 @@ class JiraClientTest {
         assertTrue(failure(401) is AuthenticationException)
         assertTrue(failure(403, headers = mapOf("X-Seraph-LoginReason" to "AUTHENTICATION_DENIED")) is CaptchaRequiredException)
         assertEquals("HTTP 400: Field 'x' is wrong; customfield_1: required", failure(400, """{"errorMessages":["Field 'x' is wrong"],"errors":{"customfield_1":"required"}}""").message)
+        assertEquals("HTTP 400: Field \"summary\" is required", failure(400, """{"errorMessages":["Field \"summary\" is required"]}""").message)
         assertTrue(failure(200, "<html>login</html>").message!!.contains("non-JSON"))
     }
 
@@ -109,5 +110,24 @@ class JiraClientTest {
             payload.toString(),
         )
         assertEquals("PROJ-77", JiraClient(connection, fake).createIssue(payload))
+    }
+
+    @Test fun `modern create meta reads every page`() {
+        val fake = FakeTransport()
+            .on("startAt=0", body = """{"startAt":0,"maxResults":1,"total":2,"isLast":false,"values":[{"id":"1","name":"Task"}]}""")
+            .on("startAt=1", body = """{"startAt":1,"maxResults":1,"total":2,"isLast":true,"values":[{"id":"2","name":"Bug"}]}""")
+        val types = JiraClient(connection, fake, ServerVersion.parse("9.4.0")).issueTypes("PROJ")
+        assertEquals(listOf("Task", "Bug"), types.map { it.name })
+    }
+
+    @Test fun `jira error on modern create meta is not hidden by the legacy fallback`() {
+        val fake = FakeTransport().on("createmeta/NOPE/issuetypes", 404, """{"errorMessages":["Project NOPE not found"],"errors":{}}""")
+        try {
+            JiraClient(connection, fake).issueTypes("NOPE")
+            fail("expected an exception")
+        } catch (e: RemoteException) {
+            assertTrue(e.message!!.contains("Project NOPE not found"))
+        }
+        assertEquals(1, fake.requests.size)
     }
 }

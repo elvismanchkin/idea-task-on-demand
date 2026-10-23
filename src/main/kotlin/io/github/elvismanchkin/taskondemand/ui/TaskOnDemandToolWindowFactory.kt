@@ -13,8 +13,9 @@ class TaskOnDemandToolWindowFactory : ToolWindowFactory, DumbAware {
         val factory = ContentFactory.getInstance()
         val jira = JiraPanel(project)
         val confluence = ConfluencePanel(project)
+        val observability = ObservabilityPanel(project)
         toolWindow.contentManager.addContent(factory.createContent(jira, "Jira", false).also { Disposer.register(it, jira) })
-        toolWindow.contentManager.addContent(factory.createContent(ObservabilityPanel(project), "Logs & Metrics", false))
+        toolWindow.contentManager.addContent(factory.createContent(observability, "Logs & Metrics", false).also { Disposer.register(it, observability) })
         toolWindow.contentManager.addContent(factory.createContent(confluence, "Confluence", false).also { Disposer.register(it, confluence) })
     }
 }

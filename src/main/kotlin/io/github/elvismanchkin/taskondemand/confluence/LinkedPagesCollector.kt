@@ -43,7 +43,11 @@ class LinkedPagesCollector(
         repositoryRoot: Path?,
     ): List<LinkedPage> {
         val result = mutableListOf<LinkedPage>()
-        pinnedIds.forEach { id -> resolve(PageRef.ById(id), "$confluenceBaseUrl/pages/viewpage.action?pageId=$id", PageSource.PINNED, null)?.let(result::add) }
+        pinnedIds.forEach { id ->
+            // An unresolvable pin (deleted, no permission, server down) still shows, as a plain link.
+            val url = "$confluenceBaseUrl/pages/viewpage.action?pageId=$id"
+            result += resolve(PageRef.ById(id), url, PageSource.PINNED, null) ?: LinkedPage("Page $id", url, PageSource.PINNED, id = id)
+        }
 
         issueLinks
             .filter { it.applicationType == CONFLUENCE_APP_TYPE || ConfluenceLinks.isConfluenceUrl(it.url, confluenceBaseUrl) }
@@ -55,7 +59,7 @@ class LinkedPagesCollector(
 
         if (issueKey != null && client != null) {
             try {
-                client.search("type = page AND text ~ \"$issueKey\" ORDER BY lastmodified DESC", 10)
+                client.search(ConfluenceClient.mentionsCql(issueKey), 10)
                     .forEach { result += it.toLinked(PageSource.JIRA_MENTION, issueKey) }
             } catch (e: RemoteException) {
                 LOG.info("Confluence search for $issueKey failed: ${e.message}")
@@ -63,7 +67,14 @@ class LinkedPagesCollector(
         }
 
         if (repositoryRoot != null) {
-            scanRepository(repositoryRoot).forEachIndexed { index, (url, file) ->
+            // An unreadable folder must not cost the pages found above.
+            val repositoryLinks = try {
+                scanRepository(repositoryRoot)
+            } catch (e: Exception) {
+                LOG.info("Cannot scan $repositoryRoot for Confluence links: ${e.message}")
+                emptyList()
+            }
+            repositoryLinks.forEachIndexed { index, (url, file) ->
                 // Each lookup is a request; past the limit, list the raw links without titles.
                 val ref = ConfluenceLinks.parse(url)?.takeIf { index < MAX_RESOLVED_REPOSITORY_LINKS }
                 result += (if (ref != null) resolve(ref, url, PageSource.REPOSITORY, file) else null)

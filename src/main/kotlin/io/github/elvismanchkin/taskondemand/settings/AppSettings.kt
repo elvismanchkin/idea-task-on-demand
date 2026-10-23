@@ -20,7 +20,8 @@ class AppSettings : PersistentStateComponent<AppSettings.State> {
         var url: String = ""
         var authType: String = ""
         var username: String = ""
-        /** Last version reported by the server; chooses between legacy and newer API flavours. */
+        /** Last version reported by the server; chooses between legacy and newer API flavours. Written off the EDT. */
+        @Volatile
         var detectedVersion: String = ""
     }
 

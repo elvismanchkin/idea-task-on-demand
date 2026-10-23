@@ -2,6 +2,7 @@ package io.github.elvismanchkin.taskondemand.core
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -23,7 +24,8 @@ fun <T> runInBackground(
             private var result: Result<T>? = null
 
             override fun run(indicator: ProgressIndicator) {
-                result = runCatching(work)
+                // Cancellation must propagate; the platform then skips the result and no error is shown.
+                result = runCatching(work).onFailure { if (it is ProcessCanceledException) throw it }
             }
 
             override fun onFinished() {
@@ -33,10 +35,13 @@ fun <T> runInBackground(
         })
         return
     }
+    // Captured on the caller's thread: inside a dialog the callbacks still run, but never during an unrelated modal one.
+    val modality = ModalityState.defaultModalityState()
     val app = ApplicationManager.getApplication()
     app.executeOnPooledThread {
         val result = runCatching(work)
-        app.invokeLater({ result.fold(onSuccess, onError) }, ModalityState.any()) { project?.isDisposed == true }
+        if (result.exceptionOrNull() is ProcessCanceledException) return@executeOnPooledThread
+        app.invokeLater({ result.fold(onSuccess, onError) }, modality) { project?.isDisposed == true }
     }
 }
 

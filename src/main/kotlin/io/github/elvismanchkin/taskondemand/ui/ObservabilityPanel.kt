@@ -1,6 +1,7 @@
 package io.github.elvismanchkin.taskondemand.ui
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.ui.ColoredListCellRenderer
@@ -17,7 +18,7 @@ import javax.swing.JList
 import javax.swing.JPanel
 
 /** Logs & Metrics tab: the project's applications, each with its Kibana logs and Grafana dashboard. */
-class ObservabilityPanel(private val project: Project) : JPanel(BorderLayout()) {
+class ObservabilityPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
     private val settings = ProjectSettings.getInstance(project)
     private val model = DefaultListModel<AppMapping>()
@@ -57,6 +58,7 @@ class ObservabilityPanel(private val project: Project) : JPanel(BorderLayout()) 
         )
         add(toolbar.component, BorderLayout.NORTH)
         add(ScrollPaneFactory.createScrollPane(list), BorderLayout.CENTER)
+        project.messageBus.connect(this).subscribe(ProjectSettings.CHANGED, ProjectSettings.Listener { reload() })
         reload()
     }
 
@@ -70,4 +72,6 @@ class ObservabilityPanel(private val project: Project) : JPanel(BorderLayout()) 
         ShowSettingsUtil.getInstance().showSettingsDialog(project, "Project Mapping")
         reload()
     }
+
+    override fun dispose() = Unit
 }

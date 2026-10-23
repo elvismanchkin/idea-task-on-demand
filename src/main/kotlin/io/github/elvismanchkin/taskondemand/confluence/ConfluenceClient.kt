@@ -41,9 +41,14 @@ class ConfluenceClient(connection: ServerConnection, transport: HttpTransport) {
         rest.get("rest/api/content", mapOf("spaceKey" to spaceKey, "title" to title, "expand" to EXPAND))
             .arr("results").firstOrNull()?.let(::parsePage)
 
-    fun search(cql: String, limit: Int = 25): List<ConfluencePage> =
+    /** CQL search. CQL arrived in Confluence 5.7; on 5.5–5.6 the endpoint is missing and this throws a clear error. */
+    fun search(cql: String, limit: Int = 25): List<ConfluencePage> = try {
         rest.get("rest/api/content/search", mapOf("cql" to cql, "limit" to limit, "expand" to EXPAND))
             .arr("results").map(::parsePage)
+    } catch (e: RemoteException) {
+        if (e.status == 404) throw RemoteException("Search needs Confluence 5.7 or newer (CQL)", 404, e)
+        throw e
+    }
 
     fun resolve(ref: PageRef): ConfluencePage? = when (ref) {
         is PageRef.ById -> page(ref.id)
@@ -66,11 +71,29 @@ class ConfluenceClient(connection: ServerConnection, transport: HttpTransport) {
     companion object {
         private const val EXPAND = "space,version"
 
-        /** CQL for a free-text search, optionally limited to one space. */
+        /**
+         * CQL for a free-text search, optionally limited to one space. Plain words are searched as words; text with
+         * Lucene syntax characters (a pasted stack-trace line, a URL) is searched as an exact phrase, because CQL hands
+         * the value of `~` to the Lucene query parser and those characters would make it fail or mean something else.
+         */
         fun textSearchCql(text: String, spaceKey: String?): String {
-            val quoted = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-            val space = if (spaceKey.isNullOrBlank()) "" else " AND space = \"$spaceKey\""
-            return "type = page AND (title ~ $quoted OR text ~ $quoted)$space ORDER BY lastmodified DESC"
+            val value = if (text.any { it in LUCENE_SYNTAX } || text.startsWith('-')) phrase(text) else string(text)
+            val space = if (spaceKey.isNullOrBlank()) "" else " AND space = ${string(spaceKey)}"
+            return "type = page AND (title ~ $value OR text ~ $value)$space ORDER BY lastmodified DESC"
         }
+
+        /** Pages that contain [issueKey] as a phrase. Unquoted, `PROJ-123` would match any page containing "123". */
+        fun mentionsCql(issueKey: String): String = "type = page AND text ~ ${phrase(issueKey)} ORDER BY lastmodified DESC"
+
+        /** A CQL string literal. */
+        fun string(text: String): String = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+        /**
+         * A CQL string holding a Lucene phrase query: `"\"exact words\""`.
+         * Lucene can't escape inside a phrase, so `"` and `\` become spaces.
+         */
+        fun phrase(text: String): String = string("\"" + text.replace('"', ' ').replace('\\', ' ').trim() + "\"")
+
+        private const val LUCENE_SYNTAX = "+!(){}[]^\"~*?:\\/&|"
     }
 }

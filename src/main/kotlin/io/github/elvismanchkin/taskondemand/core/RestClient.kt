@@ -1,6 +1,9 @@
 package io.github.elvismanchkin.taskondemand.core
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.net.URLEncoder
 import java.util.Base64
 
@@ -14,7 +17,13 @@ data class ServerConnection(
     val isConfigured: Boolean get() = normalizedUrl.isNotEmpty()
 }
 
-open class RemoteException(message: String, val status: Int = 0, cause: Throwable? = null) : Exception(message, cause)
+/** [responseBody] is the raw error body, for callers that need to tell a server's own error from a missing endpoint. */
+open class RemoteException(
+    message: String,
+    val status: Int = 0,
+    cause: Throwable? = null,
+    val responseBody: String = "",
+) : Exception(message, cause)
 
 /** Jira/Confluence lock Basic auth behind a CAPTCHA after repeated failures; retrying only makes it worse. */
 class CaptchaRequiredException(serverUrl: String) : RemoteException(
@@ -73,19 +82,22 @@ open class RestClient(val connection: ServerConnection, private val transport: H
             in 200..299 -> return
             401 -> throw AuthenticationException("Authentication failed (401). Check the credentials.", 401)
             403 -> throw AuthenticationException("Access denied (403).${errorDetails(response)}", 403)
-            else -> throw RemoteException("HTTP ${response.status}${errorDetails(response)}", response.status)
+            else -> throw RemoteException(
+                "HTTP ${response.status}${errorDetails(response)}", response.status, responseBody = response.body,
+            )
         }
     }
 
     private fun errorDetails(response: HttpResponse): String {
         val json = runCatching { parseJson(response.body) }.getOrNull() ?: return ""
         // Jira: errorMessages[] + errors{}; Confluence/Kibana/Grafana: message.
-        val messages = json.arr("errorMessages").mapNotNull { it.str("") ?: it.toString().trim('"') } +
-            ((json.at("errors") as? kotlinx.serialization.json.JsonObject)?.map { (k, v) -> "$k: ${v.toString().trim('"')}" }
-                .orEmpty()) +
+        val messages = json.arr("errorMessages").map { it.text() } +
+            ((json.at("errors") as? JsonObject)?.map { (k, v) -> "$k: ${v.text()}" }.orEmpty()) +
             listOfNotNull(json.str("message"))
         return if (messages.isEmpty()) "" else ": " + messages.joinToString("; ")
     }
+
+    private fun JsonElement.text(): String = (this as? JsonPrimitive)?.contentOrNull ?: toString()
 
     companion object {
         fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")

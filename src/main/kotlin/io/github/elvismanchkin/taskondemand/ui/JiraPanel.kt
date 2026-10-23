@@ -48,6 +48,9 @@ class JiraPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         column("Priority", 80) { it.priority ?: "" },
     )
     private val table: TableView<JiraIssue> = TableView(model)
+    /** Bumped per search; only the newest answer is shown, and nothing after the tab is closed. */
+    private var generation = 0
+    private var disposed = false
 
     init {
         jqlField.emptyText.text = "JQL (Enter to search)"
@@ -92,6 +95,7 @@ class JiraPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
     private fun effectiveJql(): String = settings.state.jiraJql.ifBlank { IssueKeys.defaultJql(settings.projectKeys) }
 
     fun reload() {
+        val request = ++generation
         jqlField.text = effectiveJql()
         if (!AppSettings.getInstance().isConfigured(ServerKind.JIRA)) {
             table.emptyText.text = "Jira server is not configured (Settings | Tools | Task on Demand)"
@@ -102,8 +106,14 @@ class JiraPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         runInBackground(
             project, null,
             work = { Clients.jira().search(jql) },
-            onError = { model.items = emptyList(); table.emptyText.text = it.userMessage() },
+            onError = {
+                if (isCurrent(request)) {
+                    model.items = emptyList()
+                    table.emptyText.text = it.userMessage()
+                }
+            },
             onSuccess = { issues ->
+                if (!isCurrent(request)) return@runInBackground
                 model.items = issues
                 table.emptyText.text = "No issues match the JQL"
             },
@@ -120,7 +130,11 @@ class JiraPanel(private val project: Project) : JPanel(BorderLayout()), Disposab
         table.repaint()
     }
 
-    override fun dispose() = Unit
+    private fun isCurrent(request: Int) = !disposed && request == generation
+
+    override fun dispose() {
+        disposed = true
+    }
 
     private fun column(name: String, width: Int, value: (JiraIssue) -> String): ColumnInfo<JiraIssue, String> = object : ColumnInfo<JiraIssue, String>(name) {
         override fun valueOf(item: JiraIssue): String = value(item)

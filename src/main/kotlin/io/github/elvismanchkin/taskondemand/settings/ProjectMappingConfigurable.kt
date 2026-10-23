@@ -78,7 +78,7 @@ class ProjectMappingConfigurable(private val project: Project) : Configurable {
 
     override fun isModified(): Boolean {
         val s = settings.state
-        return projectKeys.text.trim() != s.jiraProjectKeys || jql.text.trim() != s.jiraJql ||
+        return projectKeys.text.trim() != s.jiraProjectKeys || enteredJql() != s.jiraJql ||
             branchPattern.text.trim() != s.branchIssuePattern || defaultIssueType.text.trim() != s.defaultIssueType ||
             prefixCommit.isSelected != s.prefixCommitMessage || registerNavigation.isSelected != s.registerIssueNavigation ||
             spaceKey.text.trim() != s.confluenceSpaceKey || pageIds.text.trim() != s.confluencePageIds ||
@@ -89,7 +89,7 @@ class ProjectMappingConfigurable(private val project: Project) : Configurable {
     override fun apply() {
         val s = settings.state
         s.jiraProjectKeys = projectKeys.text.trim()
-        s.jiraJql = jql.text.trim().takeIf { it != IssueKeys.defaultJql(settings.projectKeys) }.orEmpty()
+        s.jiraJql = enteredJql()
         s.branchIssuePattern = branchPattern.text.trim()
         s.defaultIssueType = defaultIssueType.text.trim()
         s.prefixCommitMessage = prefixCommit.isSelected
@@ -100,6 +100,13 @@ class ProjectMappingConfigurable(private val project: Project) : Configurable {
         s.applications = appsModel.items.map { it.copy() }.toMutableList()
         IssueNavigationSync.sync(project)
         CurrentIssueService.getInstance(project).refresh(force = true)
+        project.messageBus.syncPublisher(ProjectSettings.CHANGED).projectSettingsChanged()
+    }
+
+    /** The default JQL is stored as empty, so it keeps following the project keys. */
+    private fun enteredJql(): String {
+        val keys = ProjectSettings.splitList(projectKeys.text).map { it.uppercase() }
+        return jql.text.trim().takeIf { it != IssueKeys.defaultJql(keys) }.orEmpty()
     }
 
     override fun reset() {

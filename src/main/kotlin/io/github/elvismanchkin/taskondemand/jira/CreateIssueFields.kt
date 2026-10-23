@@ -13,12 +13,13 @@ object CreateIssueFields {
     /** Fields the create dialog always handles itself, or that Jira fills in. */
     val BUILT_IN = setOf("project", "issuetype", "summary", "description", "reporter", "attachment", "issuelinks")
 
-    enum class Editor { TEXT, MULTILINE, NUMBER, DATE, SELECT, MULTI_SELECT, LABELS, USER, UNSUPPORTED }
+    enum class Editor { TEXT, MULTILINE, NUMBER, DATE, DATETIME, SELECT, MULTI_SELECT, LABELS, USER, UNSUPPORTED }
 
     fun editorFor(field: JiraField): Editor = when (field.schemaType) {
         "string" -> if (field.allowedValues.isNotEmpty()) Editor.SELECT else Editor.TEXT
         "number" -> Editor.NUMBER
-        "date", "datetime" -> Editor.DATE
+        "date" -> Editor.DATE
+        "datetime" -> Editor.DATETIME
         "user" -> Editor.USER
         "option", "priority", "version", "component", "resolution", "securitylevel" ->
             if (field.allowedValues.isNotEmpty()) Editor.SELECT else Editor.UNSUPPORTED
@@ -50,11 +51,16 @@ object CreateIssueFields {
         if (value == null || (value is String && value.isBlank()) || (value is Collection<*> && value.isEmpty())) return null
         return when (editorFor(field)) {
             Editor.TEXT, Editor.MULTILINE, Editor.DATE -> JsonPrimitive(value.toString().trim())
+            // Jira Server only accepts the full `yyyy-MM-dd'T'HH:mm:ss.SSSZ` form for datetime fields.
+            Editor.DATETIME -> JsonPrimitive(toJiraDateTime(value.toString().trim()) ?: return null)
             Editor.NUMBER -> JsonPrimitive(value.toString().trim().toBigDecimalOrNull() ?: return null)
             // Jira Server identifies users by name, not accountId.
             Editor.USER -> buildJsonObject { put("name", value.toString().trim()) }
             Editor.SELECT -> if (field.schemaType == "string") JsonPrimitive(value.toString()) else idObject(value.toString())
-            Editor.MULTI_SELECT -> buildJsonArray { (value as Collection<*>).forEach { add(idObject(it.toString())) } }
+            // Arrays of plain strings (e.g. a multi-select of string values) take the values themselves, others take ids.
+            Editor.MULTI_SELECT -> buildJsonArray {
+                (value as Collection<*>).forEach { add(if (field.schemaItems == "string") JsonPrimitive(it.toString()) else idObject(it.toString())) }
+            }
             Editor.LABELS -> buildJsonArray {
                 value.toString().split(',', ' ').map { it.trim() }.filter { it.isNotEmpty() }.forEach { add(JsonPrimitive(it)) }
             }
@@ -78,4 +84,13 @@ object CreateIssueFields {
     }
 
     private fun idObject(id: String) = buildJsonObject { put("id", id) }
+
+    private val DATE_TIME = Regex("""(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}):(\d{2}))?""")
+
+    /** `2024-05-01` or `2024-05-01 13:30` → `2024-05-01T13:30:00.000+0000` (UTC); null if it doesn't parse. */
+    fun toJiraDateTime(text: String): String? {
+        val match = DATE_TIME.matchEntire(text) ?: return null
+        val (date, hour, minute) = match.destructured
+        return "${date}T${hour.ifEmpty { "00" }}:${minute.ifEmpty { "00" }}:00.000+0000"
+    }
 }

@@ -42,4 +42,21 @@ class CreateIssueFieldsTest {
         assertEquals("\"v1\"", CreateIssueFields.toJson(field("s", "string", values = 1), "v1").toString())
         assertEquals("""[{"id":"1"},{"id":"2"}]""", CreateIssueFields.toJson(field("c", "array", "component", values = 2), listOf("1", "2")).toString())
     }
+
+    @Test fun `datetime fields get the full Jira format`() {
+        val due = field("customfield_7", "datetime")
+        assertEquals(Editor.DATETIME, CreateIssueFields.editorFor(due))
+        assertEquals("\"2024-05-01T00:00:00.000+0000\"", CreateIssueFields.toJson(due, "2024-05-01").toString())
+        assertEquals("\"2024-05-01T13:30:00.000+0000\"", CreateIssueFields.toJson(due, "2024-05-01 13:30").toString())
+        assertNull(CreateIssueFields.toJson(due, "tomorrow"))
+        assertEquals("\"2024-05-01\"", CreateIssueFields.toJson(field("duedate", "date"), "2024-05-01").toString())
+    }
+
+    @Test fun `string arrays with allowed values send the values themselves`() {
+        val strings = field("customfield_8", "array", "string", values = 2)
+        assertEquals(Editor.MULTI_SELECT, CreateIssueFields.editorFor(strings))
+        assertEquals("""["v1","v2"]""", CreateIssueFields.toJson(strings, listOf("v1", "v2")).toString())
+        val components = field("components", "array", "component", values = 2)
+        assertEquals("""[{"id":"1"}]""", CreateIssueFields.toJson(components, listOf("1")).toString())
+    }
 }

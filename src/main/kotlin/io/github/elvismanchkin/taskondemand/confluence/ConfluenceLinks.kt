@@ -13,11 +13,13 @@ sealed interface PageRef {
 
 object ConfluenceLinks {
 
-    private val URL_IN_TEXT = Regex("""https?://[^\s<>"'`)\]|]+""")
+    /** Stops at `)` unless it closes a `(` inside the URL, so `/display/DEV/Foo+(bar)` survives inside Markdown links. */
+    private val URL_IN_TEXT = Regex("""https?://(?:[^\s<>"'`()\[\]|]|\([^\s<>"'`()]*\))+""")
     private val PAGE_ID = Regex("""[?&]pageId=(\d+)""")
     private val DISPLAY = Regex("""/display/([^/?#]+)/([^?#]+)""")
     private val SPACES_PAGES = Regex("""/spaces/([^/?#]+)/pages/(\d+)""")
-    private val TINY = Regex("""/x/([A-Za-z0-9_\-]+)""")
+    /** `/x/{code}` right after the host or a one-segment context path, so `/download/attachments/1/x/…` doesn't match. */
+    private val TINY = Regex("""^https?://[^/?#]+(?:/[^/?#]+)?/x/([A-Za-z0-9_\-]{1,11})/?(?:[?#].*)?$""")
 
     /** All URLs in [text] that point to the Confluence server at [baseUrl] (scheme and trailing slash ignored). */
     fun findUrls(text: String, baseUrl: String): List<String> {

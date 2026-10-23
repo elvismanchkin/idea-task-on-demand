@@ -1,6 +1,7 @@
 package io.github.elvismanchkin.taskondemand.grafana
 
 import io.github.elvismanchkin.taskondemand.core.ServerVersion
+import java.net.URLDecoder
 import java.net.URLEncoder
 
 object GrafanaUrls {
@@ -20,7 +21,11 @@ object GrafanaUrls {
         to: String = "now",
     ): String {
         val legacy = (version != null && !version.isAtLeast(5)) || uid.isBlank()
-        val path = if (legacy) "/dashboard/db/${slug.ifBlank { uid }}" else "/d/$uid" + if (slug.isNotBlank()) "/$slug" else ""
+        val path = when {
+            legacy -> "/dashboard/db/${enc(slug.ifBlank { uid })}"
+            slug.isBlank() -> "/d/${enc(uid)}"
+            else -> "/d/${enc(uid)}/${enc(slug)}"
+        }
         val params = buildList {
             if (orgId.isNotBlank()) add("orgId" to orgId)
             variables.forEach { (name, value) -> add("var-$name" to value) }
@@ -30,13 +35,19 @@ object GrafanaUrls {
         return baseUrl.trimEnd('/') + path + "?" + params.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
     }
 
-    /** Parses `name=value` lines (also `&`-separated). Repeating a name gives a multi-value variable. */
+    /**
+     * Parses `name=value` lines (also `&`-separated). Repeating a name gives a multi-value variable.
+     * Values containing `%` are treated as pasted from a URL and decoded, so they aren't encoded twice.
+     */
     fun parseVariables(text: String): List<Pair<String, String>> =
         text.split('\n', '&')
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
-            .map { it.substringBefore('=').trim().removePrefix("var-") to it.substringAfter('=').trim() }
+            .map { it.substringBefore('=').trim().removePrefix("var-") to decodePasted(it.substringAfter('=').trim()) }
             .filter { it.first.isNotEmpty() }
+
+    private fun decodePasted(value: String): String =
+        if ('%' in value) runCatching { URLDecoder.decode(value, Charsets.UTF_8) }.getOrDefault(value) else value
 
     private fun enc(value: String) = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
 }

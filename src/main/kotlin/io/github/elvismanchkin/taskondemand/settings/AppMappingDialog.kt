@@ -102,8 +102,9 @@ class AppMappingDialog(private val project: Project?, private val mapping: AppMa
         runInBackground(
             project, null,
             work = { Clients.kibana().indexPatterns() },
-            onError = { kibanaStatus.text = "Cannot load index patterns: ${it.userMessage()}" },
+            onError = { if (!isDisposed) kibanaStatus.text = "Cannot load index patterns: ${it.userMessage()}" },
             onSuccess = { patterns ->
+                if (isDisposed) return@runInBackground
                 val selectedId = (indexPattern.selectedItem as? KibanaIndexPattern)?.id
                 indexPatternModel.replaceAll(patterns)
                 indexPattern.selectedItem = patterns.firstOrNull { it.id == selectedId } ?: indexPattern.selectedItem
@@ -118,8 +119,15 @@ class AppMappingDialog(private val project: Project?, private val mapping: AppMa
         runInBackground(
             project, null,
             work = { Clients.grafana().searchDashboards() },
-            onError = { pickDashboard.isEnabled = true; setErrorText("Grafana: ${it.userMessage()}") },
+            onError = {
+                if (!isDisposed) {
+                    pickDashboard.isEnabled = true
+                    setErrorText("Grafana: ${it.userMessage()}")
+                }
+            },
             onSuccess = { dashboards ->
+                // The dialog may have been closed while Grafana was answering.
+                if (isDisposed || !pickDashboard.isShowing) return@runInBackground
                 pickDashboard.isEnabled = true
                 JBPopupFactory.getInstance().createPopupChooserBuilder(dashboards)
                     .setTitle("Grafana Dashboards")

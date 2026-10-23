@@ -48,6 +48,11 @@ Key points:
   extracts the key with `IssueKeys.fromBranch`, fetches the issue silently in the background and publishes
   `CurrentIssueService.TOPIC` on the EDT. The status-bar widget, the Jira and Confluence tabs and the commit-message
   provider read its `snapshot`.
+- **Async UI results.** Panels and dialogs number their requests and ignore answers that are not the newest one or
+  that arrive after the panel/dialog is disposed (`JiraPanel`, `ConfluencePanel`, `CurrentIssueService`,
+  `CreateIssueDialog`). Copy that pattern for new async UI.
+- **Credentials on redirects.** `HttpRequests` follows GET redirects itself; `PlatformHttpTransport` only sets the
+  `Authorization` header while the request stays on the configured scheme, host and port (`isSameOrigin`).
 - **Errors.** `RestClient` maps 401/403, the Jira/Confluence CAPTCHA lock (`X-Seraph-LoginReason`) and non-JSON
   answers (SSO login pages) to `RemoteException` subclasses with user-readable messages (`Throwable.userMessage()`).
 
@@ -58,7 +63,8 @@ Key points:
 | Jira | `createmeta/{project}/issuetypes` from 8.4; old `createmeta?expand=` removed in 9.0 | `JiraClient.issueTypes/fields` |
 | Jira / Confluence | Personal access tokens (Bearer) from Jira 8.14 / Confluence 7.9 | `AuthType.BEARER` |
 | Kibana | Discover route `/app/discover#/` from 7.10, before that `/app/kibana#/discover` | `KibanaUrls.discoverRoute` |
-| Kibana | KQL from 6.3, Lucene before | `KibanaUrls.queryLanguage` |
+| Kibana | KQL from 6.3, Lucene before (unknown version → KQL, deliberately) | `KibanaUrls.queryLanguage` |
+| Confluence | CQL search (`/rest/api/content/search`) from 5.7; earlier versions get a clear error | `ConfluenceClient.search` |
 | Grafana | `/d/{uid}/{slug}` from 5.0, before that `/dashboard/db/{slug}` | `GrafanaUrls.dashboard` |
 | Grafana | `/api/health` from 6.0, fallback `/api/frontend/settings` | `GrafanaClient.serverVersion` |
 
